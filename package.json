@@ -1,0 +1,25 @@
+{
+  "name": "promise-polyfill",
+  "version": "1.0.0",
+  "description": "手写一个符合 A+ 规范的 promise",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha ./test.js",
+    "build": ""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wongxong/promise-polyfill.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/wongxong/promise-polyfill/issues"
+  },
+  "homepage": "https://github.com/wongxong/promise-polyfill#readme",
+  "dependencies": {
+    "mocha": "^8.1.1",
+    "promises-aplus-tests": "^2.1.2"
+  }
+}
