@@ -31,6 +31,7 @@ Promise 必须处于三种状态之一: 请求状态（pending），完成状态
 先按照需求完成这部分代码，实例化Promise对象时必须传入一个函数作为执行器，有两个参数（resolve 和 reject）分别将结果转为成功状态和失败状态：
 
 ```
+// promise 的三种状态
 const STATE = {
    0: "pending",
    1: "fulfilled",
@@ -43,20 +44,25 @@ class MyPromise {
       this._value = undefined;
       this._callbacks = [];
       
+      // new Promise 后，同步执行 resolver 函数
       doFunc(this, resolver);
    }
    
    resolve(value) {
+      // promise 的状态只能由 pending 改成 fulfilled or rejected
       if(this._status !== STATE["0"]) return;
       this._status = STATE["1"];
       this._value = value;
+      // promise 状态改变以后，执行缓存的 回调函数
       this._callbacks.forEach(doHandler);
    }
    
    reject(reason) {
+      // promise 的状态只能由 pending 改成 fulfilled or rejected
       if(this._status !== STATE["0"]) return;
       this._status = STATE["2"];
       this._value = reason;
+      // promise 状态改变以后，执行缓存的 回调函数
       this._callbacks.forEach(doHandler);
    }
 }
@@ -66,15 +72,18 @@ function doHandler(handler) {
 }
 
 function doFunc(ctx, fn) {
+   // 声明一个变量, 用于判断保证 promise 只会 【完成】 或 【被拒绝】 一次
    let called = false;
    
    try {
       resolver(
+         // resolve 参数
          v => {
             if(called) return;
             called = true;
             ctx.resolve(v);
          },
+         // reject 参数
          r => {
             if(called) return;
             called = true;
@@ -148,18 +157,213 @@ class MyPromise {
    - 2.2.7.4 如果onRejected不是一个函数，并且promise1已经被拒绝（rejected），promise2必须使用与promise1相同的原因被拒绝（rejected）
    
    
-现根据这些要求先实现个简单的 then 函数：
+根据这些要求实现 then 函数：
 
 ```
+function noop() {}
+
+function isFunction(fn) {
+   return typeof fn === "function";
+}
+
 class MyPromise {
    then(onFulfilled, onRejected) {
+      const p = new MyPromise(noop);
+      const handler = {
+         p,
+         x: this,
+         onFulfilled,
+         onRejected
+      };
+      
       if(this._status === STATE["0"]) {
-         this._callbacks.push();
+         // 如果 promise 的状态 还在 pending, 先缓存 then 的 回调
+         this._callbacks.push(handler);
+      } else {
+         // 如果 promise 已经 settled, 直接执行 then 的回调
+         doHandler(handler);
       }
+      
+      // 返回一个新的 promise 对象
+      return p;
+   }
+}
+
+function doHandler({ p, x, onFulfilled, onRejected }) {
+   // then 的回调是异步执行的，使用 setTimeout 模拟
+   setTimeout(() => {
+      const { _status, _value } = x;
+      const fn = _status === STATE["1"] ? onFulfilled : onRejected;
+      
+      if(isFunction(fn)) {
+         // 如果 onFulfilled or onRejected 是函数，运行 Promise Resolution Procedure [[Resolve]](promise2, fn(_value))
+         try {
+            resolvePromise(p, fn(_value));
+         } catch(e) {
+            p.reject(e);
+         }
+      } else {
+         _status === STATE["1"] ? p.resolve(_value) : p.reject(_value);
+      }
+   });
+}
+
+// Promise Resolution Procedure
+function resolvePromise(p, x) {
+   // ...
+}
+
+```
+
+# Promise/A+ [2.3]
+
+## 2.3 Promise解决程序
+
+- 2.3.1 如果 promise 和 x 引用同一个对象，则用 TypeError 作为原因拒绝（reject）promise。
+
+- 2.3.2 如果 x 是 promise，采用 promise 的状态
+   - 2.3.2.1 如果x的状态是 pending，promise 必须保持 pending 直到 x 的状态 fulfilled or rejected。
+   - 2.3.2.2 如果x的状态是 fulfilled，用 x 相同的值 fulfill promise。
+   - 2.3.2.3 如果x的状态是 rejected，用 x 相同的原因 reject promise。
+
+- 2.3.3 如果 x 是对象或者函数
+   - 2.3.3.1 尝试获取 x.then 的引用，then = x.then。
+   - 2.3.3.2 如果获取 x.then 抛出异常 e ，用 e 作为原因 reject promise。
+   - 2.3.3.3 如果 then 是一个函数，把 x 当作 this 来调用它，第一个参数为 resolvePromise，第二个参数为 rejectPromise，其中：
+      - 2.3.3.3.1 如果 resolvePromise 被一个值 y 调用，运行 [[resolve]](promise, y)
+      - 2.3.3.3.2 如果 rejectPromise 被一个原因 r 调用，用 r 作为原因 reject promise
+      - 2.3.3.3.3 如果 resolvePromise 和 rejectPromise 都被调用，或者对同一个参数进行多次调用，第一次调用执行，任何进一步的调用都被忽略
+      - 2.3.3.3.4 如果调用 then 抛出一个异常 e
+         - 2.3.3.3.4.1 如果 resolvePromise 和 rejectPromise 都已被调用，则忽略
+         - 2.3.3.3.4.2 或者 用 e 作为原因 reject promise
+   - 2.3.3.4 如果 then 既不是对象也不是函数，用 x 作为值 resolve promise
+
+
+```
+function isObject(obj) {
+   return Object.prototype.toString.call(obj) === "[object Object]";
+}
+
+function resolvePromise(p, x) {
+   if(p === x) {
+      // 如果循环引用，抛出 TypeError
+      return p.reject(new TypeError("Chaining cycle detected for promise"));
+   }
+   
+   // 如果 x 是 promise, 根据 x 的状态 执行
+   if(x instanceof MyPromise) {
+      return x.then(
+         v => resolvePromise(p, v),
+         r => p.reject(r)
+      );
+   }
+   
+   // 如果 x 是函数 或者 对象
+   if(x !== null && (isFunction(x) || isObject(x))) {
+      try {
+         // 取出 x.then 的引用
+         const then = x.then;
+         
+         if(isFunction(then)) {
+            doFunc(p, then.bind(x));
+         } else {
+            p.resolve(x);
+         }
+      } catch(e) {
+         // 如果 访问 x.then 抛出异常 e, p.reject(e)
+         p.reject(e);
+      }
+   } else {
+      // 直接 p.resolve(x)
+      p.resolve(x);
    }
 }
 
 ```
+
+修改一下 doFunc 函数，递归调用 resolvePromise
+
+```
+function doFunc(ctx, fn) {
+   // 声明一个变量, 用于判断保证 promise 只会 【完成】 或 【被拒绝】 一次
+   let called = false;
+   
+   try {
+      resolver(
+         // resolve 参数
+         v => {
+            if(called) return;
+            called = true;
+            resolvePromise(ctx, v);
+         },
+         // reject 参数
+         r => {
+            if(called) return;
+            called = true;
+            ctx.reject(r);
+         }
+      );
+   } catch(e) {
+      if(called) return;
+      called = true;
+      ctx.reject(e);
+   }
+}
+```
+
+
+# 测试Promise
+
+安装测试脚本：
+
+```
+yarn add mocha promises-aplus-tests
+```
+
+新建一个 test.js 测试文件
+
+```
+const MyPromise = require("./src/polyfill.js");
+const tests = require("promises-aplus-tests");
+
+function deferred() {
+   let resolve;
+   let reject;
+   const promise = new MyPromise((_resolve, _reject) => {
+      resolve = _resolve;
+      reject = _reject;
+   });
+   
+   return {
+      promise,
+      resolve,
+      reject
+   }
+}
+
+const adapter = {
+   deferred
+};
+
+tests.mocha(adapter);
+
+```
+
+在 package.json 里面添加 scripts 命令
+
+```
+{
+   ...
+   "scripts": {
+      ...
+      "test": "mocha ./test.js"
+      ...
+   }
+   ...
+}
+```
+
+执行 yarn test 查看测试结果
 
 
 
