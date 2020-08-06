@@ -11,13 +11,16 @@
 
 # Promise/A+ [2.1]
 
-## Promise 状态
+## 2.1 Promise 状态
 
 Promise 必须处于三种状态之一: 请求状态(pending), 完成状态(fulfilled) 或者 拒绝状态(rejected)。
 
 - 2.1.1 当Promise处于请求状态(pending)时：
    - 2.1.1.1 Promise 可以转为 完成状态(fulfilled) 或者 拒绝状态(rejected)。
+   
 - 2.1.2 当Promise处于完成状态(fulfilled)时：
    - 2.1.2.1 Promise 不能转为任何其他状态。
+   
 - 2.1.3 当Promise处于拒绝状态(rejected)时：
    - 2.1.3.1 Promise 不能转为任何其他状态。
+   
