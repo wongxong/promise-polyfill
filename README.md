@@ -366,5 +366,13 @@ tests.mocha(adapter);
 执行 yarn test 查看测试结果
 
 
+补充 Promise 的静态方法：
+
+- Promise.resolve 返回一个 fulfilled 的 promise
+- Promise.reject 返回一个 rejected 的 promise
+- Promise.all 
+- Promise.allSettled
+- Promise.race
+- Promise.any
 
 

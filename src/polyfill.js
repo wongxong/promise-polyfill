@@ -1,4 +1,5 @@
 
+// promise 三种状态
 const STATE = {
   0: 'pending',
   1: 'fulfilled',
@@ -14,7 +15,6 @@ function isObject(obj) {
 }
 
 function noop() {}
-
 
 class MyPromise {
   static resolve(value) {
@@ -62,7 +62,7 @@ class MyPromise {
         promises.forEach((p, index) => {
           const cb = (val, status) => {
             resolvedCount += 1;
-            const k = status === 'fulfilled' ? 'value' : 'reason';
+            const k = status === STATE['1'] ? 'value' : 'reason';
             array[index] = {
               status,
               [k]: val
@@ -73,10 +73,10 @@ class MyPromise {
             }
           };
           p.then(val => {
-            cb(val, 'fulfilled');
+            cb(val, STATE['1']);
           })
           .catch(reason => {
-            cb(reason, 'rejected');
+            cb(reason, STATE['2']);
           });
         });
       } catch(err) {
@@ -115,6 +115,7 @@ class MyPromise {
 
   constructor(resolver) {
     if(!isFunction(resolver)) {
+      // resolver must be a function
       throw new TypeError('resolver should be a function');
     }
 
@@ -136,11 +137,14 @@ class MyPromise {
     };
 
     if(this._status === STATE['0']) {
+      // 如果 promise pending 缓存回调函数
       this._callbacks.push(handler);
     } else {
+      // 如果 promise settled
       doHandler(handler);
     }
 
+    // 返回一个新的 promise
     return p;
   }
 
@@ -150,39 +154,16 @@ class MyPromise {
 
   resolve(value) {
     if(this._status !== STATE['0']) return;
-
-    if(this === value) {
-      return this.reject(new TypeError('Chaining cycle detected for promise'));
-    }
-
-    if(value !== null && (isFunction(value) || isObject(value))) {
-      // 可能是个对象或是函数
-      try {
-        const then = value.then;
-
-        if(isFunction(then)) {
-          // 如果 value.then 是函数，执行 value.then 
-          return doFunc(this, then.bind(value));
-        }
-      } catch(err) {
-        return this.reject(err);
-      }
-    }
-
     this._status = STATE['1'];
     this._value = value;
-    this._callbacks.forEach(handler => {
-      doHandler(handler);
-    });
+    this._callbacks.forEach(doHandler);
   }
 
   reject(reason) {
     if(this._status !== STATE['0']) return;
     this._status = STATE['2'];
     this._value = reason;
-    this._callbacks.forEach(handler => {
-      doHandler(handler);
-    });
+    this._callbacks.forEach(doHandler);
   }
 }
 
@@ -194,7 +175,7 @@ function doFunc(ctx, fn) {
       v => {
         if(called) return;
         called = true;
-        ctx.resolve(v);
+        resolvePromise(ctx, v);
       },
       r => {
         if(called) return;
@@ -210,13 +191,15 @@ function doFunc(ctx, fn) {
 }
 
 function doHandler({ p, x, onFulfilled, onRejected }) {
+  // then 的回调是异步执行的，使用 setTimeout 模拟
   setTimeout(() => {
     const { _status, _value } = x;
     const fn = _status === STATE['1'] ? onFulfilled : onRejected;
 
     if(isFunction(fn)) {
+      // 如果 onFulfilled or onRejected 是函数，运行 Promise Resolution Procedure [[Resolve]](promise2, fn(_value))
       try {
-        p.resolve(fn(_value));
+        resolvePromise(p, fn(_value));
       } catch(err) {
         p.reject(err);
       }
@@ -224,6 +207,42 @@ function doHandler({ p, x, onFulfilled, onRejected }) {
       _status === STATE['1'] ? p.resolve(_value) : p.reject(_value);
     }
   });
+}
+
+
+// Promise Resolution Procedure
+function resolvePromise(p, x) {
+  if(p === x) {
+    // 如果循环引用，抛出 TypeError
+    return p.reject(new TypeError('chaining'));
+  }
+
+  // 如果 x 是 promise, 根据 x 的状态 执行
+  if(x instanceof MyPromise) {
+    return x.then(
+       v => resolvePromise(p, v),
+       r => p.reject(r)
+    );
+ }
+
+  // 如果 x 是函数 或者 对象
+  if(x !== null && (isFunction(x) || isObject(x))) {
+    try {
+      const then = x.then;
+
+      if(isFunction(then)) {
+        doFunc(p, then.bind(x));
+      } else {
+        p.resolve(x);
+      }
+    } catch(e) {
+      // 如果 访问 x.then 抛出异常 e, p.reject(e)
+      p.reject(e);
+    }
+  } else {
+    // 直接 p.resolve(x)
+    p.resolve(x);
+  }
 }
 
 module.exports = MyPromise;
